@@ -4,7 +4,8 @@ classdef AMD7003D
         deviceParams
         destination_ip;
         destination_port;
-        udp_socket;
+        udp_read_socket;
+        udp_write_socket; % sormayın anlatamam 
 
         deviceData
         temperature;
@@ -23,7 +24,8 @@ classdef AMD7003D
             obj.deviceParams = struct( ...
                 'destination_ip', destination_ip, ...
                 'destination_port', destination_port, ...
-                'udp_socket',udpport('Timeout',1));
+                'udp_read_socket',udpport(), ...
+                'udp_write_socket',udp("192.168.2.168","RemotePort",9036));
             obj.deviceData = struct( ...
                 'temperature',[] ...
                 ,'acceleration_X',[] ...
@@ -33,14 +35,9 @@ classdef AMD7003D
                 ,'encoder',[]);
         end
 
-        % Show Device Parameters
-        function getParams(obj)
-            obj.deviceData
-        end
-
         % Read Connected Device Data
         function [ACCX,ACCY,ACCZ,DT,ENCODER,TEMPERATURE] = readData(obj)
-            data        = read(obj.deviceParams.udp_socket(),100,"string");
+            data        = read(obj.deviceParams.udp_read_socket,100,"string");
             data        = obj.parseData(data);
             ACCX        = data.acceleration_X;
             ACCY        = data.acceleration_Y;
@@ -56,9 +53,12 @@ classdef AMD7003D
             status = obj.chechkTheConnection();
             if status == 0
                 error_message = 'Connection is succesful';
-                %disp(error_message)
+
                 message = uint8(2);
-                write(obj.deviceParams.udp_socket,message,"uint8",obj.deviceParams.destination_ip,obj.deviceParams.destination_port);
+                fopen(obj.deviceParams.udp_write_socket);
+                fwrite(obj.deviceParams.udp_write_socket,message);
+                write(obj.deviceParams.udp_read_socket,message,"uint8",obj.deviceParams.destination_ip,obj.deviceParams.destination_port);
+
             else
                 error_message = 'Connection failed';
                 %disp(error_message)
@@ -67,13 +67,8 @@ classdef AMD7003D
 
         % Write Data
         function writeData(obj,data)
-            message = uint8([3 data]);
-            write(obj.deviceParams.udp_socket ...
-                ,message ...
-                ,"uint8" ...
-                ,obj.deviceParams.destination_ip ...
-                ,obj.deviceParams.destination_port);
-            %fprintf('%f setted to AMD.\n',data);
+            message = uint8([3,data]);
+            fwrite(obj.deviceParams.udp_write_socket,message);
         end
 
     end
@@ -87,6 +82,7 @@ classdef AMD7003D
             data = (strsplit(data,'\n'));
             data = uint8(data{2});
             array_size = size(data);
+            
             if array_size(2) == 72
                 obj.deviceData.temperature      = typecast(data(45:48),'single');
                 obj.deviceData.acceleration_Z   = typecast(data(41:44),'single');
@@ -102,7 +98,6 @@ classdef AMD7003D
                 obj.deviceData.acceleration_Y   = 0;
                 obj.deviceData.acceleration_X   = 0;
                 obj.deviceData.dt               = 0;
-                % encoder datasından emin değilim ??
                 obj.deviceData.encoder          = 0;
                 updatedStruct = obj.deviceData;
             end
